@@ -4,13 +4,16 @@
 package supervisor
 
 import (
+	"archive/tar"
 	"bufio"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/tls"
 	_ "embed"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -49,6 +52,7 @@ import (
 	"go.uber.org/multierr"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"golang.org/x/mod/semver"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/open-telemetry/opentelemetry-collector-contrib/cmd/opampsupervisor/supervisor/commander"
@@ -1584,6 +1588,42 @@ func (s *Supervisor) onMessage(ctx context.Context, msg *types.MessageData) {
 		}) || configChanged
 	}
 
+	if msg.PackagesAvailable != nil {
+		for name, pkg := range msg.PackagesAvailable.GetPackages() {
+			currentVersion := s.commander.GetRunningVersion()
+			if semver.Compare(pkg.Version, currentVersion) == 1 && s.commander.IsRunning() {
+				s.commander.Stop(ctx) // TODO(@tpaschalis) Not the right context here
+				defer s.commander.Start(ctx)
+
+				success := true
+				f, err := downloadFile(filepath.Join("/tmp", name), pkg.File.DownloadUrl)
+				if err != nil {
+					success = false
+					s.telemetrySettings.Logger.Error("failed to download the package")
+				}
+				err = ExtractTarGz(f, filepath.Join("/tmp", name))
+				if err != nil {
+					success = false
+					s.telemetrySettings.Logger.Error("failed to extract package file")
+				}
+
+				err = os.Chmod(filepath.Join("/tmp", name, "otelcol-contrib"), 0755)
+				if err != nil {
+					success = false
+					s.telemetrySettings.Logger.Error("failed to set chmod +x")
+				}
+
+				// mv old new
+				if success {
+					err = os.Rename(filepath.Join("/tmp", name, "otelcol-contrib"), s.commander.GetExecutableLocation())
+					if err != nil {
+						s.telemetrySettings.Logger.Error("failed to move new binary into location")
+					}
+				}
+			}
+		}
+	}
+
 	// Update the agent config if any messages have touched the config
 	if configChanged {
 		err := s.opampClient.UpdateEffectiveConfig(ctx)
@@ -1777,4 +1817,77 @@ func configMergeFunc(src, dest map[string]any) error {
 	}
 
 	return nil
+}
+
+func ExtractTarGz(gzipStream io.Reader, path string) error {
+	uncompressedStream, err := gzip.NewReader(gzipStream)
+	if err != nil {
+		return errors.New("failed to create NewReader")
+	}
+
+	tarReader := tar.NewReader(uncompressedStream)
+	if err := os.Mkdir(path, 0755); err != nil {
+		return fmt.Errorf("failed to create top-level folder: %w", err)
+	}
+
+	for true {
+		header, err := tarReader.Next()
+
+		if err == io.EOF {
+			break
+		}
+
+		if err != nil {
+			return fmt.Errorf("Next() failed: %s", err.Error())
+		}
+
+		switch header.Typeflag {
+		case tar.TypeDir:
+			if err := os.Mkdir(filepath.Join(path, header.Name), 0755); err != nil {
+				return fmt.Errorf("Mkdir() failed: %s", err.Error())
+			}
+		case tar.TypeReg:
+			outFile, err := os.Create(filepath.Join(path, header.Name))
+			if err != nil {
+				return fmt.Errorf("Create() failed: %s", err.Error())
+			}
+			if _, err := io.Copy(outFile, tarReader); err != nil {
+				return fmt.Errorf("Copy() failed: %s", err.Error())
+			}
+			outFile.Close()
+
+		default:
+			return fmt.Errorf(
+				"unknown type: %v in %s",
+				header.Typeflag,
+				header.Name)
+		}
+	}
+
+	return nil
+}
+
+func downloadFile(fp string, url string) (*os.File, error) {
+	out, err := os.Create(fp)
+	if err != nil {
+		return nil, err
+	}
+	defer out.Close()
+
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("error while downloading package: status: %s", resp.Status)
+	}
+
+	_, err = io.Copy(out, resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	return out, nil
 }

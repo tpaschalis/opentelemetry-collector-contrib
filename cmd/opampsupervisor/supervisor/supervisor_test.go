@@ -1805,3 +1805,10 @@ telemetry:
 
 	supervisor.Shutdown()
 }
+
+func TestMe(t *testing.T) {
+	f, err := os.Open("/Users/tpaschalis/Downloads/otelcol-contrib_0.127.0_darwin_arm64.tar.gz")
+	require.NoError(t, err)
+	err = ExtractTarGz(f, filepath.Join("/tmp", "otelcollll"))
+	require.NoError(t, err)
+}

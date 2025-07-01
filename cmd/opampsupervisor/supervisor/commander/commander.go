@@ -12,10 +12,12 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync/atomic"
 	"time"
 
 	"go.uber.org/zap"
+	"golang.org/x/mod/semver"
 
 	"github.com/open-telemetry/opentelemetry-collector-contrib/cmd/opampsupervisor/supervisor/common"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/cmd/opampsupervisor/supervisor/config"
@@ -32,6 +34,8 @@ type Commander struct {
 	doneCh  chan struct{}
 	exitCh  chan struct{}
 	running *atomic.Int64
+
+	runningVersion string
 }
 
 func NewCommander(logger *zap.Logger, logsDir string, cfg config.Agent, args ...string) (*Commander, error) {
@@ -100,6 +104,25 @@ func (c *Commander) startNormal() error {
 	stdoutFile, err := os.Create(logFilePath)
 	if err != nil {
 		return fmt.Errorf("cannot create %s: %w", logFilePath, err)
+	}
+
+	// The otelcolcontrib binary outputs its version like so:
+	// $ ./otelcol-contrib --version
+	// otelcol-contrib version 0.128.0
+	versionCmd := exec.CommandContext(context.Background(), c.cfg.Executable, "--version")
+	b, err := versionCmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to get --version")
+	}
+
+	_, version, found := strings.Cut(string(b), " ")
+	if !found {
+		return fmt.Errorf("unexpected --version output")
+	}
+
+	if semver.IsValid(version) {
+		fmt.Println("      >> Storing version:", version)
+		c.runningVersion = version
 	}
 
 	// Capture standard output and standard error.
@@ -361,4 +384,12 @@ func (c *Commander) Stop(ctx context.Context) error {
 	cancel()
 
 	return innerErr
+}
+
+func (c *Commander) GetRunningVersion() string {
+	return c.runningVersion
+}
+
+func (c *Commander) GetExecutableLocation() string {
+	return c.cfg.Executable
 }

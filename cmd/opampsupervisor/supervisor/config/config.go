@@ -93,6 +93,7 @@ type Storage struct {
 type Capabilities struct {
 	AcceptsRemoteConfig            bool `mapstructure:"accepts_remote_config"`
 	AcceptsRestartCommand          bool `mapstructure:"accepts_restart_command"`
+	AcceptsPackages                bool `mapstructure:"accepts_packages"`
 	AcceptsOpAMPConnectionSettings bool `mapstructure:"accepts_opamp_connection_settings"`
 	ReportsEffectiveConfig         bool `mapstructure:"reports_effective_config"`
 	ReportsOwnMetrics              bool `mapstructure:"reports_own_metrics"`
@@ -101,10 +102,18 @@ type Capabilities struct {
 	ReportsHealth                  bool `mapstructure:"reports_health"`
 	ReportsRemoteConfig            bool `mapstructure:"reports_remote_config"`
 	ReportsAvailableComponents     bool `mapstructure:"reports_available_components"`
+	ReportsPackageStatuses         bool `mapstructure:"reports_package_statuses"`
 }
 
 func (c Capabilities) SupportedCapabilities() protobufs.AgentCapabilities {
 	supportedCapabilities := protobufs.AgentCapabilities_AgentCapabilities_ReportsStatus
+
+	if c.AcceptsPackages {
+		supportedCapabilities |= protobufs.AgentCapabilities_AgentCapabilities_AcceptsPackages
+	}
+	if c.ReportsPackageStatuses {
+		supportedCapabilities |= protobufs.AgentCapabilities_AgentCapabilities_ReportsPackageStatuses
+	}
 
 	if c.ReportsEffectiveConfig {
 		supportedCapabilities |= protobufs.AgentCapabilities_AgentCapabilities_ReportsEffectiveConfig
