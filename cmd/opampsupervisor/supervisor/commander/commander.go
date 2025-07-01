@@ -115,13 +115,14 @@ func (c *Commander) startNormal() error {
 		return fmt.Errorf("failed to get --version")
 	}
 
-	_, version, found := strings.Cut(string(b), "version ")
+	_, version, found := strings.Cut(string(b), " version ")
 	if !found {
 		return fmt.Errorf("unexpected --version output")
 	}
+	version = strings.TrimSpace(version)
+	version = "v" + version
 
 	if semver.IsValid(version) {
-		fmt.Println("      >> Storing version:", version)
 		c.runningVersion = version
 	}
 

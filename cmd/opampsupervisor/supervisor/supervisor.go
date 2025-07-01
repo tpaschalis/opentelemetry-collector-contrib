@@ -1595,28 +1595,20 @@ func (s *Supervisor) onMessage(ctx context.Context, msg *types.MessageData) {
 		currentVersion := s.commander.GetRunningVersion()
 		fmt.Println(" >> Got current version", currentVersion)
 
+		// TODO(@tpaschalis) This leaks files.
 		for name, pkg := range msg.PackagesAvailable.GetPackages() {
-			fmt.Println(" >> Looping through", name, pkg)
-			if semver.Compare(pkg.Version, currentVersion) == 1 && s.commander.IsRunning() {
-				fmt.Println(" >> Found a newer version, stopping the collector and deferring the start")
+			if semver.Compare(pkg.Version, currentVersion) == 1 {
 				s.commander.Stop(ctx) // TODO(@tpaschalis) Not the right context here
 				defer s.commander.Start(ctx)
 
 				success := true
 				f, err := downloadFile(filepath.Join("/tmp", name), pkg.File.DownloadUrl)
-				fmt.Println(" >> Downloaded the file", f, err)
 				if err != nil {
 					success = false
 					s.telemetrySettings.Logger.Error("failed to download the package")
 				}
-				// err = ExtractTarGz(f, filepath.Join("/tmp", name))
-				// if err != nil {
-				// 	success = false
-				// 	s.telemetrySettings.Logger.Error("failed to extract package file")
-				// }
 
 				err = f.Chmod(0755)
-				fmt.Println(" >> Set the file permissions", err)
 				if err != nil {
 					success = false
 					s.telemetrySettings.Logger.Error("failed to set chmod +x")
@@ -1625,7 +1617,6 @@ func (s *Supervisor) onMessage(ctx context.Context, msg *types.MessageData) {
 				// mv old new
 				if success {
 					err = os.Rename(filepath.Join("/tmp", name), s.commander.GetExecutableLocation())
-					fmt.Println(" >> Moved the file", err, s.commander.GetExecutableLocation())
 					if err != nil {
 						s.telemetrySettings.Logger.Error("failed to move new binary into location")
 					}
@@ -1882,7 +1873,6 @@ func downloadFile(fp string, url string) (*os.File, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer out.Close()
 
 	resp, err := http.Get(url)
 	if err != nil {
