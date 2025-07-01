@@ -81,6 +81,9 @@ func (caps Capabilities) toAgentCapabilities() protobufs.AgentCapabilities {
 		agentCapabilities |= protobufs.AgentCapabilities_AgentCapabilities_ReportsAvailableComponents
 	}
 
+	agentCapabilities |= protobufs.AgentCapabilities_AgentCapabilities_AcceptsPackages
+	agentCapabilities |= protobufs.AgentCapabilities_AgentCapabilities_ReportsPackageStatuses
+
 	return agentCapabilities
 }
 
