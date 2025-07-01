@@ -1589,25 +1589,33 @@ func (s *Supervisor) onMessage(ctx context.Context, msg *types.MessageData) {
 	}
 
 	if msg.PackagesAvailable != nil {
+		fmt.Println(" >> Got a message with PackagesAvailable")
+
+		currentVersion := s.commander.GetRunningVersion()
+		fmt.Println(" >> Got current version", currentVersion)
+
 		for name, pkg := range msg.PackagesAvailable.GetPackages() {
-			currentVersion := s.commander.GetRunningVersion()
+			fmt.Println(" >> Looping through", name, pkg)
 			if semver.Compare(pkg.Version, currentVersion) == 1 && s.commander.IsRunning() {
+				fmt.Println(" >> Found a newer version, stopping the collector and deferring the start")
 				s.commander.Stop(ctx) // TODO(@tpaschalis) Not the right context here
 				defer s.commander.Start(ctx)
 
 				success := true
 				f, err := downloadFile(filepath.Join("/tmp", name), pkg.File.DownloadUrl)
+				fmt.Println(" >> Downloaded the file", f, err)
 				if err != nil {
 					success = false
 					s.telemetrySettings.Logger.Error("failed to download the package")
 				}
-				err = ExtractTarGz(f, filepath.Join("/tmp", name))
-				if err != nil {
-					success = false
-					s.telemetrySettings.Logger.Error("failed to extract package file")
-				}
+				// err = ExtractTarGz(f, filepath.Join("/tmp", name))
+				// if err != nil {
+				// 	success = false
+				// 	s.telemetrySettings.Logger.Error("failed to extract package file")
+				// }
 
-				err = os.Chmod(filepath.Join("/tmp", name, "otelcol-contrib"), 0755)
+				err = f.Chmod(0755)
+				fmt.Println(" >> Set the file permissions", err)
 				if err != nil {
 					success = false
 					s.telemetrySettings.Logger.Error("failed to set chmod +x")
@@ -1615,7 +1623,8 @@ func (s *Supervisor) onMessage(ctx context.Context, msg *types.MessageData) {
 
 				// mv old new
 				if success {
-					err = os.Rename(filepath.Join("/tmp", name, "otelcol-contrib"), s.commander.GetExecutableLocation())
+					err = os.Rename(filepath.Join("/tmp", name), s.commander.GetExecutableLocation())
+					fmt.Println(" >> Moved the file", err, s.commander.GetExecutableLocation())
 					if err != nil {
 						s.telemetrySettings.Logger.Error("failed to move new binary into location")
 					}

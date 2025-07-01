@@ -115,7 +115,7 @@ func (c *Commander) startNormal() error {
 		return fmt.Errorf("failed to get --version")
 	}
 
-	_, version, found := strings.Cut(string(b), " ")
+	_, version, found := strings.Cut(string(b), "version ")
 	if !found {
 		return fmt.Errorf("unexpected --version output")
 	}
